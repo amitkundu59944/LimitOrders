@@ -1,4 +1,3 @@
-
 package org.afob.limit;
 
 import org.afob.execution.ExecutionClient;
@@ -12,71 +11,60 @@ import java.util.List;
 public class LimitOrderAgent implements PriceListener {
 
     private final ExecutionClient executionClient;
-    private final List<LimitOrder> orders;
+    private final List<Order> orderList;
 
-
-    public LimitOrderAgent(final ExecutionClient ec) {
-        this.executionClient = ec;
-        this.orders = new ArrayList<>();
+    // Constructor
+    public LimitOrderAgent(final ExecutionClient executionClient) {
+        this.executionClient = executionClient;
+        this.orderList = new ArrayList<>();
     }
 
+    // Order Class to store order details
+    private static class Order {
+        boolean isBuy;
+        String productId;
+        int amount;
+        BigDecimal limitPrice;
 
-    public void addOrder(boolean isBuy, String productId, int amount, BigDecimal limitPrice) {
-        orders.add(new LimitOrder(isBuy, productId, amount, limitPrice));
-    }
-
-    @Override
-    public void priceTick(String productId, BigDecimal price) {
-        List<LimitOrder> executedOrders = new ArrayList<>();
-
-
-        for (LimitOrder order : orders) {
-            if (order.getProductId().equals(productId)) {
-                try {
-                    if (order.isBuy() && price.compareTo(order.getLimitPrice()) <= 0) {
-                        executionClient.buy(order.getProductId(), order.getAmount());
-                        executedOrders.add(order);
-                    } else if (!order.isBuy() && price.compareTo(order.getLimitPrice()) >= 0) {
-                        executionClient.sell(order.getProductId(), order.getAmount());
-                        executedOrders.add(order);
-                    }
-                } catch (ExecutionException e) {
-                    System.err.println("Order execution failed: " + e.getMessage());
-                }
-            }
-        }
-
-        orders.removeAll(executedOrders);
-    }
-
-
-    private static class LimitOrder {
-        private final boolean isBuy;
-        private final String productId;
-        private final int amount;
-        private final BigDecimal limitPrice;
-
-        public LimitOrder(boolean isBuy, String productId, int amount, BigDecimal limitPrice) {
+        public Order(boolean isBuy, String productId, int amount, BigDecimal limitPrice) {
             this.isBuy = isBuy;
             this.productId = productId;
             this.amount = amount;
             this.limitPrice = limitPrice;
         }
+    }
 
-        public boolean isBuy() {
-            return isBuy;
+    // Method to add orders (buy/sell)
+    public void addOrder(boolean isBuy, String productId, int amount, BigDecimal limitPrice) {
+        Order order = new Order(isBuy, productId, amount, limitPrice);
+        orderList.add(order);
+    }
+
+    @Override
+    public void priceTick(String productId, BigDecimal price) {
+        // Iterate over orders and check if any can be executed
+        List<Order> executedOrders = new ArrayList<>();
+
+        for (Order order : orderList) {
+            try {
+                if (order.productId.equals(productId)) {
+                    if (order.isBuy && price.compareTo(order.limitPrice) <= 0) {
+                        // Execute buy order if price is less than or equal to the limit price
+                        executionClient.buy(productId, order.amount);
+                        executedOrders.add(order);
+                    } else if (!order.isBuy && price.compareTo(order.limitPrice) >= 0) {
+                        // Execute sell order if price is greater than or equal to the limit price
+                        executionClient.sell(productId, order.amount);
+                        executedOrders.add(order);
+                    }
+                }
+            } catch (ExecutionException e) {
+                // Handle exceptions gracefully without breaking the loop
+                System.err.println("Order execution failed for product: " + productId + ". Error: " + e.getMessage());
+            }
         }
 
-        public String getProductId() {
-            return productId;
-        }
-
-        public int getAmount() {
-            return amount;
-        }
-
-        public BigDecimal getLimitPrice() {
-            return limitPrice;
-        }
+        // Remove executed orders from the list
+        orderList.removeAll(executedOrders);
     }
 }
